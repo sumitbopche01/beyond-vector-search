@@ -17,6 +17,24 @@ def _optional_int(raw: str | None) -> int | None:
     return int(raw)
 
 
+def load_dotenv(path: Path | None = None) -> None:
+    """Read a .env file into the process. Variables already set in the shell win."""
+    env_path = path or (Path.cwd() / ".env")
+    if not env_path.is_file():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.removeprefix("export").strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        if key:
+            os.environ.setdefault(key, value)
+
+
 @dataclass(frozen=True)
 class Settings:
     """Resolved configuration for one run. Frozen so sub-agents can share it."""

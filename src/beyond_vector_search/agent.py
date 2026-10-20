@@ -7,11 +7,12 @@ Providers differ. This loop does not.
 
 from __future__ import annotations
 
-import json
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 from beyond_vector_search.config import Settings
+from beyond_vector_search.display import colors_enabled, format_call, paint
 from beyond_vector_search.prompts import SEARCH_PROMPT
 from beyond_vector_search.providers.base import ModelTurn, Provider, ToolCall, ToolOutput
 from beyond_vector_search.result import Result, Step
@@ -53,6 +54,9 @@ def run_loop(
     provider.start(question, toolset.definitions(), system)
     result = Result(answer="")
     started = time.time()
+    use_color = verbose and colors_enabled(sys.stdout)
+    step_no = 0
+    announced = False
 
     for _ in range(max_turns):
         turn = provider.complete()
@@ -66,17 +70,21 @@ def run_loop(
             result.answer = "Stopped: hit the per-query token budget before a final answer."
             break
 
+        if verbose and turn.tool_calls and not announced:
+            print(paint("Search", "2", enabled=use_color))
+            announced = True
         if verbose:
             for call in turn.tool_calls:
-                rendered = json.dumps(call.arguments, default=str)
-                print(f"{trace_prefix}  -> {call.name}({rendered})")
+                step_no += 1
+                line = f"{trace_prefix}{step_no:>2}  {format_call(call.name, call.arguments)}"
+                print(paint(line, "2", enabled=use_color))
 
         outputs = execute_calls(turn.tool_calls, toolset)
         for call, output in zip(turn.tool_calls, outputs):
             children = list(toolset.take_children(call.id))
             result.trace.append(Step(call.name, call.arguments, output.output, children))
             if verbose and children:
-                _print_steps(children, trace_prefix + "    ")
+                step_no = _print_steps(children, trace_prefix + "    ", step_no, use_color)
         result.tool_calls += len(turn.tool_calls)
         provider.add_tool_results(outputs)
     else:
@@ -150,9 +158,11 @@ def _add_usage(result: Result, turn: ModelTurn) -> None:
     result.output_tokens += turn.output_tokens
 
 
-def _print_steps(steps: list[Step], prefix: str) -> None:
+def _print_steps(steps: list[Step], prefix: str, step_no: int, use_color: bool) -> int:
     for step in steps:
-        rendered = json.dumps(step.arguments, default=str)
-        print(f"{prefix}  -> {step.name}({rendered})")
+        step_no += 1
+        line = f"{prefix}{step_no:>2}  {format_call(step.name, step.arguments)}"
+        print(paint(line, "2", enabled=use_color))
         if step.children:
-            _print_steps(step.children, prefix + "    ")
+            step_no = _print_steps(step.children, prefix + "    ", step_no, use_color)
+    return step_no

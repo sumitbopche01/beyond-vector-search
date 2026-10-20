@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from beyond_vector_search import __version__
-from beyond_vector_search.config import Settings
+from beyond_vector_search.config import Settings, load_dotenv
 from beyond_vector_search.sandbox import Corpus
 from beyond_vector_search.tools import Toolset
 
@@ -113,8 +113,13 @@ def cmd_ask(args: argparse.Namespace) -> int:
         hybrid=args.hybrid,
         deep=args.deep,
     )
-    print(result.answer)
-    print(f"\n{result.stats_line()}")
+    from beyond_vector_search.display import colors_enabled, render_answer
+
+    print(render_answer(
+        result.answer,
+        result.stats_line(),
+        enabled=colors_enabled(sys.stdout),
+    ))
     return 0
 
 
@@ -234,6 +239,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 def resolve_settings(args: argparse.Namespace) -> Settings:
+    load_dotenv()
     settings = Settings.from_env()
     changes: dict = {}
     docs = getattr(args, "docs", None)

@@ -25,7 +25,7 @@ What you'll get here:
 - Where agentic search fails, and how to fix each failure
 - A decision framework: when agentic search wins, when RAG still wins, and when to run both
 
-All code targets Python 3.10+. This is part one. In part two we'll turn the code into an open-source project.
+All code targets Python 3.10+. The installable version of everything below is [beyond-vector-search](https://github.com/sumitbopche01/beyond-vector-search).
 
 ## 1. Classic RAG in 60 seconds, and where it breaks
 
@@ -150,6 +150,8 @@ Three rules make the agent dramatically better:
 1. **Keep structure as Markdown headings.** Headings turn into a table of contents the agent can navigate with `outline`.
 2. **Keep page numbers.** Users trust answers they can verify. A `## Page 47` heading means every grep hit can be cited to a page.
 3. **One output file per source document, mirroring the original folder layout.** The folder tree is itself context: `contracts/2024/acme/msa.md` tells the agent a lot before it reads a word.
+
+The scripts below are single files so you can read each one straight through: `ingest.py`, then `agentic_search.py`, `classic_rag.py`, and `eval.py`. In the repo those same steps are `bvs ingest`, `bvs ask`, `bvs index`, and `bvs eval`.
 
 A minimal PDF converter:
 
@@ -608,7 +610,7 @@ Three OpenAI-specific details: append the whole `resp.output` back into `input` 
 
 ### Going further: a search sub-agent
 
-On big corpora, the main agent's context fills up with dead-end grep results. The fix Anthropic describes in its Agent SDK post is a **search sub-agent**: a separate call with its own context window that does the messy searching and returns only the relevant excerpts. The implementation is small: wrap `ask()` as a tool (`deep_search(question) -> str`), give it to an orchestrator agent, and run several in parallel, one per sub-question. We'll build this properly in the open-source project.
+On big corpora, the main agent's context fills up with dead-end grep results. The fix Anthropic describes in its Agent SDK post is a **search sub-agent**: a separate call with its own context window that does the messy searching and returns only the relevant excerpts. The implementation is small: wrap `ask()` as a tool (`deep_search(question) -> str`), give it to an orchestrator agent, and run several in parallel, one per sub-question. The library ships this as `bvs ask --deep`.
 
 ## 7. The baseline: classic vector RAG in 70 lines
 
@@ -903,7 +905,7 @@ Three things to take away:
 
 ### What's next
 
-In part two we'll turn this into an open-source project: a pip-installable agentic document search library with PDF/DOCX ingestion to Markdown, a tree-outline tool for long documents, an optional hybrid semantic tool, parallel search sub-agents, Claude and OpenAI backends, and a fuller version of the eval harness from section 8 with an LLM judge and per-question-type reports.
+The library is [beyond-vector-search](https://github.com/sumitbopche01/beyond-vector-search): a pip-installable package with PDF and DOCX ingestion to Markdown, a heading tree for long documents, an optional hybrid semantic tool (`bvs ask --hybrid`), parallel search sub-agents (`bvs ask --deep`), Claude and OpenAI backends, and a fuller version of the eval harness from section 8 with an LLM judge and per-question-type reports. The sample corpus is the liability-cap example from this article, and `bvs grep` runs with no API key.
 
 If there's a document type or use case you want covered, tell me in the comments.
 

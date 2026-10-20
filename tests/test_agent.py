@@ -6,6 +6,7 @@ from pathlib import Path
 from beyond_vector_search.agent import ask, execute_calls, run_loop
 from beyond_vector_search.cli import main
 from beyond_vector_search.config import Settings
+from beyond_vector_search.display import render_answer
 from beyond_vector_search.providers.base import ModelTurn, ToolCall
 from beyond_vector_search.result import Step
 from beyond_vector_search.sandbox import Corpus
@@ -35,7 +36,7 @@ class Scripted:
         raise AssertionError("one-shot completion is not used in the loop tests")
 
 
-def test_loop_greps_then_answers(tmp_path: Path) -> None:
+def test_loop_greps_then_answers(tmp_path: Path, capsys) -> None:
     root = tmp_path / "docs"
     root.mkdir()
     (root / "addendum.md").write_text(
@@ -57,6 +58,27 @@ def test_loop_greps_then_answers(tmp_path: Path) -> None:
     assert result.tool_calls == 1
     assert result.trace[0].name == "grep"
     assert "addendum.md" in provider.results[0][0].output
+
+
+def test_verbose_trace_is_a_numbered_search_list(tmp_path: Path, capsys) -> None:
+    root = tmp_path / "docs"
+    root.mkdir()
+    (root / "addendum.md").write_text("The cap is 2x annual fees.\n", encoding="utf-8")
+    provider = Scripted([
+        ModelTurn(text="", tool_calls=[ToolCall("c1", "grep", {"pattern": "2x"})]),
+        ModelTurn(text="The cap is 2x annual fees.", tool_calls=[]),
+    ])
+    run_loop("What is the cap?", provider, Toolset(Corpus(root)), verbose=True, max_turns=4)
+    out = capsys.readouterr().out
+    assert "Search\n" in out
+    assert "1  grep  pattern=2x" in out
+    assert "Answer" not in out
+
+
+def test_answer_is_printed_apart_from_the_search() -> None:
+    text = render_answer("- The cap is 2x annual fees.", "5 turns  ·  4 searches  ·  18.8s", enabled=False)
+    assert text.index("Answer") < text.index("The cap is 2x")
+    assert text.strip().endswith("18.8s")
 
 
 def test_turn_cap_and_token_budget(tmp_path: Path) -> None:

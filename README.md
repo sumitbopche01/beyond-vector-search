@@ -43,17 +43,11 @@ bvs ingest examples/raw ./docs
 
 ```bash
 pip install -e '.[anthropic]'   # or '.[openai]'
-export ANTHROPIC_API_KEY=sk-ant-...
-export DOCS_ROOT=./examples/corpus
+cp .env.example .env            # then put your key in that file
 bvs ask "What is the enterprise liability cap, and are there exceptions?"
 ```
 
-OpenAI uses the same tools:
-
-```bash
-export OPENAI_API_KEY=sk-...
-bvs ask "What is the enterprise liability cap, and are there exceptions?" --provider openai
-```
+`bvs` reads `.env` from the current directory. Set `BVS_PROVIDER=openai` in that file to use OpenAI, or pass `--provider openai`.
 
 The trace is the debugging tool. A wrong answer is five tool calls you can read, not a cosine score.
 

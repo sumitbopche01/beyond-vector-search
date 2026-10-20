@@ -34,7 +34,6 @@ class Result:
 
     def stats_line(self) -> str:
         return (
-            f"[{self.turns} turns, {self.tool_calls} tool calls, "
-            f"{self.input_tokens} in + {self.cache_read_tokens} cached + "
-            f"{self.output_tokens} out tokens, {self.seconds}s]"
+            f"{self.turns} turns  ·  {self.tool_calls} searches  ·  {self.seconds}s"
+            f"  ·  {self.input_tokens} in, {self.cache_read_tokens} cached, {self.output_tokens} out"
         )

@@ -1,12 +1,31 @@
 """Offline checks for the path jail, the four tools, and the sample corpus."""
 
+import os
 from pathlib import Path
 
+from beyond_vector_search.config import load_dotenv
 from beyond_vector_search.sandbox import Corpus
 from beyond_vector_search.tools import Toolset
 
 ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "examples" / "corpus"
+
+
+def test_dotenv_fills_missing_keys_and_leaves_the_shell_alone(tmp_path: Path, monkeypatch) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text('OPENAI_API_KEY="from-file"\nBVS_PROVIDER=openai\n', encoding="utf-8")
+    previous = os.environ.get("OPENAI_API_KEY")
+    os.environ.pop("OPENAI_API_KEY", None)
+    monkeypatch.setenv("BVS_PROVIDER", "anthropic")
+    try:
+        load_dotenv(env_file)
+        assert os.environ["OPENAI_API_KEY"] == "from-file"
+        assert os.environ["BVS_PROVIDER"] == "anthropic"
+    finally:
+        if previous is None:
+            os.environ.pop("OPENAI_API_KEY", None)
+        else:
+            os.environ["OPENAI_API_KEY"] = previous
 
 
 def test_rejects_paths_outside_the_corpus(tmp_path: Path) -> None:
