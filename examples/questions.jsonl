@@ -1,0 +1,6 @@
+{"q": "What is the enterprise liability cap, and are there exceptions?", "type": "multi_hop", "must_include": ["2x", "9.3", "confidentiality"]}
+{"q": "What does error code TS-999 mean?", "type": "lookup", "must_include": ["TS-999", "jurisdiction"]}
+{"q": "What changed in the refund policy in 2025?", "type": "lookup", "must_include": ["14"]}
+{"q": "List every place we mention the CFO.", "type": "find_all", "must_include": ["Avery Chen", "countersigns", "72 hours"]}
+{"q": "How do we measure churn?", "type": "synonym", "must_include": ["attrition"]}
+{"q": "What is the on-call rotation for the Tokyo office?", "type": "unanswerable", "must_include": []}

@@ -1,0 +1,116 @@
+"""tree.py — heading tree for long documents.
+
+This is the structural half of tree navigation: sections, nested headings,
+and the line range of each one. Summaries are an optional LLM pass on top,
+run once per document, not on every query.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+
+from beyond_vector_search.parsing import parse_json
+
+_HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+
+
+@dataclass
+class Node:
+    level: int
+    title: str
+    start_line: int
+    end_line: int = 0
+    summary: str = ""
+    children: list[Node] = field(default_factory=list)
+
+
+def build_tree(lines: list[str]) -> list[Node]:
+    """Nest markdown headings. A section runs until the next sibling."""
+    found: list[tuple[int, int, str]] = []
+    for number, line in enumerate(lines, 1):
+        match = _HEADING.match(line)
+        if match:
+            found.append((number, len(match.group(1)), match.group(2)))
+
+    roots: list[Node] = []
+    stack: list[Node] = []
+    for start, level, title in found:
+        node = Node(level=level, title=title, start_line=start)
+        while stack and stack[-1].level >= level:
+            stack.pop()
+        if stack:
+            stack[-1].children.append(node)
+        else:
+            roots.append(node)
+        stack.append(node)
+
+    def assign_ends(nodes: list[Node], parent_end: int) -> None:
+        for index, node in enumerate(nodes):
+            if index + 1 < len(nodes):
+                node.end_line = nodes[index + 1].start_line - 1
+            else:
+                node.end_line = parent_end
+            assign_ends(node.children, node.end_line)
+
+    if lines:
+        assign_ends(roots, len(lines))
+    return roots
+
+
+def render_outline(lines: list[str]) -> str:
+    return render_nodes(build_tree(lines))
+
+
+def render_nodes(nodes: list[Node]) -> str:
+    rows: list[str] = []
+
+    def walk(level_nodes: list[Node], depth: int) -> None:
+        for node in level_nodes:
+            indent = "  " * depth
+            suffix = f" - {node.summary}" if node.summary else ""
+            heading = f"{'#' * node.level} {node.title}{suffix}"
+            rows.append(f"{indent}{node.start_line}-{node.end_line}\t{heading}")
+            walk(node.children, depth + 1)
+
+    walk(nodes, 0)
+    return "\n".join(rows)
+
+
+def flatten(nodes: list[Node]) -> list[Node]:
+    flat: list[Node] = []
+
+    def walk(level_nodes: list[Node]) -> None:
+        for node in level_nodes:
+            flat.append(node)
+            walk(node.children)
+
+    walk(nodes)
+    return flat
+
+
+def summary_request(nodes: list[Node]) -> str:
+    """Prompt body: one line per heading, so the model can hand summaries back."""
+    lines = [
+        "Write a one-sentence summary of what each section is for.",
+        "Use the heading text only. Do not invent facts that are not implied by the title.",
+        'Return a JSON array of {"start_line": number, "summary": string}.',
+        "",
+    ]
+    for node in flatten(nodes):
+        lines.append(f"{node.start_line}\t{'#' * node.level} {node.title}")
+    return "\n".join(lines)
+
+
+def apply_summaries(nodes: list[Node], payload: str) -> None:
+    """Merge a model's JSON summaries onto the tree. Unknown lines are ignored."""
+    data = parse_json(payload)
+    if not isinstance(data, list):
+        raise ValueError("summary payload must be a JSON array")
+    by_line = {}
+    for item in data:
+        if isinstance(item, dict) and "start_line" in item and "summary" in item:
+            by_line[int(item["start_line"])] = str(item["summary"]).strip()
+    for node in flatten(nodes):
+        if node.start_line in by_line:
+            node.summary = by_line[node.start_line]
