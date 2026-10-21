@@ -6,9 +6,9 @@ from pathlib import Path
 from beyond_vector_search.agent import ask, execute_calls, run_loop
 from beyond_vector_search.cli import main
 from beyond_vector_search.config import Settings
-from beyond_vector_search.display import render_answer
+from beyond_vector_search.display import format_trace_report, render_answer
 from beyond_vector_search.providers.base import ModelTurn, ToolCall
-from beyond_vector_search.result import Step
+from beyond_vector_search.result import Result, Step
 from beyond_vector_search.sandbox import Corpus
 from beyond_vector_search.tools import Param, Tool, Toolset
 
@@ -79,6 +79,26 @@ def test_answer_is_printed_apart_from_the_search() -> None:
     text = render_answer("- The cap is 2x annual fees.", "5 turns  ·  4 searches  ·  18.8s", enabled=False)
     assert text.index("Answer") < text.index("The cap is 2x")
     assert text.strip().endswith("18.8s")
+    assert "Trace" not in text
+
+
+def test_trace_report_flags_a_repeated_search() -> None:
+    result = Result(
+        answer="Stopped: hit MAX_TURNS without a final answer.",
+        stop="max_turns",
+        tool_calls=2,
+        trace=[
+            Step("grep", {"pattern": "2x"}, "hit"),
+            Step("grep", {"pattern": "2x"}, "hit"),
+            Step("read_file", {"path": "a.md", "start_line": 1}, "body"),
+        ],
+    )
+    note = format_trace_report(result)
+    assert "turn cap" in note
+    assert "grep × 2" in note
+    assert "repeated: grep pattern=2x × 2" in note
+    text = render_answer(result.answer, "2 turns", enabled=False, trace_note=note)
+    assert text.index("Answer") < text.index("Trace") < text.index("2 turns")
 
 
 def test_turn_cap_and_token_budget(tmp_path: Path) -> None:
@@ -91,6 +111,7 @@ def test_turn_cap_and_token_budget(tmp_path: Path) -> None:
     capped = run_loop("q", Scripted([always, always, always]), toolset, max_turns=2)
     assert "MAX_TURNS" in capped.answer
     assert capped.turns == 2
+    assert capped.stop == "max_turns"
 
     budget = run_loop(
         "q",
@@ -101,6 +122,7 @@ def test_turn_cap_and_token_budget(tmp_path: Path) -> None:
     )
     assert "token budget" in budget.answer
     assert budget.tool_calls == 0
+    assert budget.stop == "token_budget"
 
 
 def test_parallel_results_keep_request_order() -> None:

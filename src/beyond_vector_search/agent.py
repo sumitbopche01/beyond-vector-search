@@ -68,6 +68,7 @@ def run_loop(
         spent = result.input_tokens + result.cache_read_tokens
         if max_input_tokens is not None and spent >= max_input_tokens:
             result.answer = "Stopped: hit the per-query token budget before a final answer."
+            result.stop = "token_budget"
             break
 
         if verbose and turn.tool_calls and not announced:
@@ -89,6 +90,7 @@ def run_loop(
         provider.add_tool_results(outputs)
     else:
         result.answer = "Stopped: hit MAX_TURNS without a final answer."
+        result.stop = "max_turns"
 
     result.seconds = round(time.time() - started, 1)
     return result

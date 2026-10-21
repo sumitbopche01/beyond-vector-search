@@ -30,6 +30,7 @@ class Result:
     cache_read_tokens: int = 0
     output_tokens: int = 0
     seconds: float = 0.0
+    stop: str = "answered"
     trace: list[Step] = field(default_factory=list)
 
     def stats_line(self) -> str:

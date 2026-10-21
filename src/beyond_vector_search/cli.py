@@ -118,12 +118,13 @@ def cmd_ask(args: argparse.Namespace) -> int:
         hybrid=args.hybrid,
         deep=args.deep,
     )
-    from beyond_vector_search.display import colors_enabled, render_answer
+    from beyond_vector_search.display import colors_enabled, format_trace_report, render_answer
 
     print(render_answer(
         result.answer,
         result.stats_line(),
         enabled=colors_enabled(sys.stdout),
+        trace_note=format_trace_report(result),
     ))
     return 0
 
