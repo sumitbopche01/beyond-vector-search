@@ -25,12 +25,14 @@ anthropic = ["anthropic>=0.40"]
 openai = ["openai>=1.60"]
 ingest = ["pypdf>=5", "python-docx>=1.1"]
 rag = ["chromadb>=0.6"]
+mcp = ["mcp>=2"]
 all = [
     "anthropic>=0.40",
     "openai>=1.60",
     "pypdf>=5",
     "python-docx>=1.1",
     "chromadb>=0.6",
+    "mcp>=2",
 ]
 dev = ["pytest>=8", "pypdf>=5", "python-docx>=1.1"]
 

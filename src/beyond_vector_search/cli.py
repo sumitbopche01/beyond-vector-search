@@ -109,6 +109,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evaluate.set_defaults(func=cmd_eval)
 
+    mcp = sub.add_parser("mcp", parents=[common], help="Serve the read-only tools over MCP (stdio)")
+    mcp.set_defaults(func=cmd_mcp)
+
     return parser
 
 
@@ -275,6 +278,13 @@ def cmd_eval(args: argparse.Namespace) -> int:
     if args.out:
         written = write_report(args.out, rows, settings=settings)
         print(f"\nWrote {written}, {written.with_suffix('.jsonl')}, and {written.with_suffix('.svg')}")
+    return 0
+
+
+def cmd_mcp(args: argparse.Namespace) -> int:
+    from beyond_vector_search.mcp_server import serve
+
+    serve(resolve_settings(args))
     return 0
 
 
