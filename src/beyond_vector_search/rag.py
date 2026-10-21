@@ -126,9 +126,19 @@ def build_index(settings: Settings | None = None, collection=None) -> int:
     if not settings.docs_root.is_dir():
         raise FileNotFoundError(f"docs root does not exist: {settings.docs_root}")
     chunks = iter_corpus_chunks(settings.docs_root)
+    from beyond_vector_search.lexical import write_lexical
+    from beyond_vector_search.sandbox import text_snapshot
+
+    sources, newest = text_snapshot(settings.docs_root)
+    write_lexical(settings.lexical_path, chunks, sources=sources, newest=newest)
     if collection is None:
-        collection = open_collection(settings, reset=True)
-    if chunks:
+        try:
+            collection = open_collection(settings, reset=True)
+        except ImportError as exc:
+            raise ImportError(
+                f"{exc}. Lexical index written to {settings.lexical_path}."
+            ) from exc
+    if chunks and collection is not None:
         write_index(collection, chunks)
     return len(chunks)
 

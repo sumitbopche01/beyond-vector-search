@@ -50,7 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument("question")
     ask.add_argument("--provider", choices=["anthropic", "openai"])
     ask.add_argument("--model", help="Override the model for the selected provider")
-    ask.add_argument("--hybrid", action="store_true", help="Also give the agent a semantic_search tool")
+    ask.add_argument(
+        "--hybrid",
+        action="store_true",
+        help="Also give the agent lexical_search (BM25) and semantic_search",
+    )
     ask.add_argument("--deep", action="store_true", help="Delegate search to sub-agents")
     ask.add_argument("--quiet", action="store_true", help="Hide the tool trace")
     ask.set_defaults(func=cmd_ask)
@@ -202,8 +206,9 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 def cmd_index(args: argparse.Namespace) -> int:
     from beyond_vector_search.rag import build_index
 
-    count = build_index(resolve_settings(args))
-    print(f"Indexed {count} chunks")
+    settings = resolve_settings(args)
+    count = build_index(settings)
+    print(f"Indexed {count} chunks into the vector index and {settings.lexical_path}")
     return 0
 
 

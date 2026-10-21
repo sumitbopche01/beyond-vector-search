@@ -162,6 +162,7 @@ def test_ask_selects_orchestrator_tools_without_calling_a_model(tmp_path: Path) 
     hybrid = Scripted([ModelTurn("done", [])])
     ask("hello", verbose=False, settings=settings, provider=hybrid, hybrid=True)
     assert "semantic_search" in hybrid.seen[1]
+    assert "lexical_search" in hybrid.seen[1]
     assert "grep" in hybrid.seen[1]
 
 

@@ -7,7 +7,7 @@ sees the excerpts that come back, not the dead-end greps along the way.
 from __future__ import annotations
 
 from beyond_vector_search.config import Settings
-from beyond_vector_search.prompts import SUBAGENT_PROMPT
+from beyond_vector_search.prompts import HYBRID_NOTE, SUBAGENT_PROMPT
 from beyond_vector_search.sandbox import Corpus
 from beyond_vector_search.tools import Param, Tool, Toolset
 
@@ -24,14 +24,17 @@ def attach_deep_search(toolset: Toolset, settings: Settings, hybrid: bool = Fals
             Corpus(child_settings.docs_root, child_settings.max_output_chars),
             tree_path=child_settings.tree_path,
         )
+        system = SUBAGENT_PROMPT
         if hybrid:
-            from beyond_vector_search.rag import semantic_search_tool
-            child.extras.append(semantic_search_tool(child_settings))
+            from beyond_vector_search.lexical import attach_hybrid_tools
+
+            attach_hybrid_tools(child, child_settings)
+            system = SUBAGENT_PROMPT + "\n\n" + HYBRID_NOTE
         result = run_loop(
             question,
             make_provider(child_settings),
             child,
-            system=SUBAGENT_PROMPT,
+            system=system,
             max_turns=child_settings.max_turns,
             max_input_tokens=child_settings.max_input_tokens,
             verbose=False,

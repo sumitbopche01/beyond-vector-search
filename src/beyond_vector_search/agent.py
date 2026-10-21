@@ -105,7 +105,7 @@ def ask(
 ) -> Result:
     """Answer one question from the document root.
 
-    hybrid adds a semantic_search tool backed by the local vector index.
+    hybrid adds lexical_search (BM25) and semantic_search (the local vector index).
     deep hands the search to sub-agents and keeps their scrap work out of
     the main context.
     """
@@ -119,16 +119,24 @@ def ask(
     toolset = Toolset(corpus, tree_path=settings.tree_path)
     system = SEARCH_PROMPT
 
-    if hybrid:
-        from beyond_vector_search.rag import semantic_search_tool
-        toolset.extras.append(semantic_search_tool(settings))
-
     if deep:
         from beyond_vector_search.prompts import ORCHESTRATOR_PROMPT
         from beyond_vector_search.subagent import attach_deep_search
+
         attach_deep_search(toolset, settings, hybrid=hybrid)
         toolset.only = {"list_files", "corpus_tree", "deep_search"}
         system = ORCHESTRATOR_PROMPT
+        if hybrid:
+            system += (
+                "\n\nSub-agents can use lexical_search and semantic_search. "
+                "You only see their excerpts."
+            )
+    elif hybrid:
+        from beyond_vector_search.lexical import attach_hybrid_tools
+        from beyond_vector_search.prompts import HYBRID_NOTE
+
+        attach_hybrid_tools(toolset, settings)
+        system = SEARCH_PROMPT + "\n\n" + HYBRID_NOTE
 
     active = provider if provider is not None else _make(settings)
     return run_loop(
