@@ -1,7 +1,9 @@
-"""Chunk coordinates, the keyword scorer, and the comparison report."""
+"""Chunk coordinates, the keyword scorer, the citation column, and the saved report."""
 
+import json
 from pathlib import Path
 
+from beyond_vector_search.cli import main
 from beyond_vector_search.evaluate import (
     Question,
     Row,
@@ -10,9 +12,11 @@ from beyond_vector_search.evaluate import (
     load_questions,
     render_report,
     score_keywords,
+    write_report,
 )
 from beyond_vector_search.rag import chunk_document, format_hits, write_index
 from beyond_vector_search.result import Result
+from beyond_vector_search.sandbox import Corpus
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -113,3 +117,66 @@ def test_evaluate_uses_the_supplied_systems() -> None:
 
     rows = evaluate([item], {"agentic": agentic, "rag": rag})
     assert [row.keyword_ok for row in rows] == [True, False]
+
+
+def test_report_adds_a_citation_column_and_a_sidecar(tmp_path: Path) -> None:
+    item = Question("cap?", ["2x"], "lookup")
+    corpus = Corpus(ROOT / "examples" / "corpus")
+    rows = evaluate(
+        [item],
+        {
+            "agentic": lambda _question: Result(
+                "The cap is 2x (contracts/enterprise_addendum.md:11)."
+            ),
+            "rag": lambda _question: Result("The cap is 2x somewhere."),
+        },
+        corpus=corpus,
+    )
+    text = render_report(rows)
+    assert "cited" in text
+    assert "uncited" in text
+    written = write_report(tmp_path / "report.md", rows)
+    assert "allowed to lose" in written.read_text(encoding="utf-8")
+    saved = [
+        json.loads(line)
+        for line in written.with_suffix(".jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert saved[0]["grounded"] is True
+    assert saved[1]["grounded"] is False
+    chart = written.with_suffix(".svg").read_text(encoding="utf-8")
+    assert "agentic 100%" in chart
+    assert "rag 0%" in chart
+    assert "Keyword accuracy by question type" in chart
+
+
+def test_eval_command_writes_the_report(tmp_path: Path, monkeypatch, capsys) -> None:
+    def fake_ask(question, **kwargs):
+        return Result(
+            "The cap is 2x (contracts/enterprise_addendum.md:11). "
+            "Section 9.3 excludes confidentiality (contracts/msa_2024.md:31-37).",
+            turns=2,
+            tool_calls=2,
+            seconds=0.1,
+        )
+
+    def fake_rag(question, **kwargs):
+        return Result("The cap is 2x somewhere.", turns=1, seconds=0.1)
+
+    monkeypatch.setattr("beyond_vector_search.agent.ask", fake_ask)
+    monkeypatch.setattr("beyond_vector_search.rag.rag_answer", fake_rag)
+    out = tmp_path / "report.md"
+    code = main([
+        "eval",
+        str(ROOT / "examples" / "questions.jsonl"),
+        "--docs",
+        str(ROOT / "examples" / "corpus"),
+        "--systems",
+        "agentic,rag",
+        "--out",
+        str(out),
+    ])
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    assert out.is_file()
+    assert out.with_suffix(".jsonl").is_file()
+    assert "cited" in captured.out

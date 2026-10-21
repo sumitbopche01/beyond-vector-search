@@ -1,8 +1,11 @@
 """evaluate.py — compare systems on the same questions.
 
-Keyword checks are crude and transparent. The optional judge asks the model
-whether the answer is actually right and whether the citations look real.
-Split the report by question type: that split is where the decision lives.
+Keyword checks are crude and transparent. Citation checks open the cited
+lines and see whether the required facts are actually there. The optional
+judge asks the model whether the answer is right. Split the report by
+question type: that split is where the decision lives.
+
+A system is allowed to lose. Write the report and keep it.
 """
 
 from __future__ import annotations
@@ -10,11 +13,14 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
+from beyond_vector_search.citations import CitationScore, score_citations
 from beyond_vector_search.parsing import parse_json
 from beyond_vector_search.prompts import JUDGE_PROMPT
-from beyond_vector_search.result import Result
+from beyond_vector_search.result import Result, Step
+from beyond_vector_search.sandbox import Corpus
 
 ABSENT_PHRASES = (
     "not in the document",
@@ -65,6 +71,7 @@ class Row:
     result: Result
     keyword_ok: bool
     verdict: JudgeVerdict | None = None
+    citation: CitationScore | None = None
 
 
 def load_questions(path: Path) -> list[Question]:
@@ -130,18 +137,24 @@ def evaluate(
     questions: list[Question],
     systems: dict[str, Callable[[str], Result]],
     judge: Callable[[Question, str], JudgeVerdict] | None = None,
+    corpus: Corpus | None = None,
 ) -> list[Row]:
     rows: list[Row] = []
     for item in questions:
         for name, answer_fn in systems.items():
             result = answer_fn(item.q)
-            verdict = judge(item, result.answer) if judge else None
+            verdict = None
+            if judge:
+                verdict = judge(item, result.answer)
+            citation = score_citations(result.answer, item, corpus) if corpus is not None else None
+            keyword_ok = score_keywords(result.answer, item)
             rows.append(Row(
                 system=name,
                 question=item,
                 result=result,
-                keyword_ok=score_keywords(result.answer, item),
+                keyword_ok=keyword_ok,
                 verdict=verdict,
+                citation=citation,
             ))
     return rows
 
@@ -151,7 +164,10 @@ def render_report(rows: list[Row]) -> str:
         return "No results."
     systems = list(dict.fromkeys(row.system for row in rows))
     has_judge = any(row.verdict is not None for row in rows)
+    has_citations = any(row.citation is not None for row in rows)
     header = f"{'system':<12}{'accuracy':>10}"
+    if has_citations:
+        header += f"{'cited':>10}"
     if has_judge:
         header += f"{'judge':>10}"
     header += f"{'avg in':>10}{'avg cached':>12}{'avg out':>10}{'avg sec':>9}"
@@ -165,6 +181,10 @@ def render_report(rows: list[Row]) -> str:
         n = len(group)
         accuracy = sum(row.keyword_ok for row in group) / n
         line = f"{name:<12}{accuracy:>10.0%}"
+        if has_citations:
+            cited = [row for row in group if row.citation is not None]
+            rate = sum(row.citation.grounded for row in cited) / len(cited) if cited else 0
+            line += f"{rate:>10.0%}"
         if has_judge:
             judged = [row for row in group if row.verdict is not None]
             rate = sum(row.verdict.correct for row in judged) / len(judged) if judged else 0
@@ -192,6 +212,24 @@ def render_report(rows: list[Row]) -> str:
                 cells += f"{rate:>12.0%}"
         lines.append(cells)
 
+    if has_citations:
+        lines.append("")
+        lines.append("by question type (citation support):")
+        lines.append(type_header)
+        for kind in types:
+            cells = f"{kind:<16}"
+            for name in systems:
+                subset = [
+                    row for row in grouped[name]
+                    if row.question.type == kind and row.citation is not None
+                ]
+                if not subset:
+                    cells += f"{'-':>12}"
+                else:
+                    rate = sum(row.citation.grounded for row in subset) / len(subset)
+                    cells += f"{rate:>12.0%}"
+            lines.append(cells)
+
     lines.append("")
     lines.append("questions:")
     for row in rows:
@@ -201,5 +239,100 @@ def render_report(rows: list[Row]) -> str:
             judge = "  judge=pass" if row.verdict.correct else "  judge=fail"
             if row.verdict.reason:
                 judge += f"  ({row.verdict.reason})"
-        lines.append(f"{row.system:<12}{mark:<6}{judge}  {row.question.type:<12}{row.question.q}")
+        cite = ""
+        if row.citation is not None:
+            cite = "  cited" if row.citation.grounded else "  uncited"
+            if row.citation.note and not row.citation.grounded:
+                cite += f" ({row.citation.note})"
+        lines.append(f"{row.system:<12}{mark:<6}{cite}{judge}  {row.question.type:<12}{row.question.q}")
     return "\n".join(lines)
+
+
+_PREAMBLE = """\
+# Eval
+
+One run. Systems are allowed to lose.
+
+Keyword accuracy is the share of answers that contain every required fact,
+or, for an unanswerable question, that say the documents do not contain it.
+Cited is the share of answers whose file:line-range citations resolve to
+real lines and, when facts are required, contain those facts.
+"""
+
+
+def write_report(path: Path, rows: list[Row], *, settings: object | None = None) -> Path:
+    """Write the markdown report, a JSONL sidecar, and an SVG comparison."""
+    target = Path(path)
+    if target.suffix.lower() != ".md":
+        target = target / "report.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    header = _PREAMBLE
+    if settings is not None:
+        provider = getattr(settings, "provider", "")
+        model = getattr(settings, "model", "")
+        docs = getattr(settings, "docs_root", "")
+        try:
+            docs = Path(docs).resolve().relative_to(Path.cwd().resolve())
+        except (ValueError, OSError):
+            docs = getattr(settings, "docs_root", "")
+        header += f"\nDate {date.today().isoformat()}. Provider `{provider}`, model `{model}`, docs `{docs}`.\n"
+    from beyond_vector_search.charts import render_comparison_chart
+    from beyond_vector_search.sandbox import atomic_write
+
+    chart = target.with_suffix(".svg")
+    atomic_write(chart, render_comparison_chart(rows))
+    image = f"\n![Keyword accuracy and citation support by system]({chart.name})\n"
+    report = render_report(rows)
+    atomic_write(target, header + image + "\n```\n" + report + "\n```\n")
+    sidecar = target.with_suffix(".jsonl")
+    lines = [_row_json(row) for row in rows]
+    atomic_write(sidecar, "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in lines))
+    return target
+
+
+def _row_json(row: Row) -> dict:
+    result = row.result
+    payload = {
+        "system": row.system,
+        "type": row.question.type,
+        "q": row.question.q,
+        "keyword_ok": row.keyword_ok,
+        "answer": result.answer,
+        "stop": result.stop,
+        "turns": result.turns,
+        "tool_calls": result.tool_calls,
+        "input_tokens": result.input_tokens,
+        "cache_read_tokens": result.cache_read_tokens,
+        "output_tokens": result.output_tokens,
+        "seconds": result.seconds,
+        "trace": [_step_json(step) for step in result.trace],
+    }
+    if row.citation is not None:
+        payload["grounded"] = row.citation.grounded
+        payload["resolved"] = row.citation.resolved
+        payload["missing"] = list(row.citation.missing)
+        payload["note"] = row.citation.note
+        payload["citations"] = [
+            {"path": item.path, "start": item.start, "end": item.end}
+            for item in row.citation.citations
+        ]
+    if row.verdict is not None:
+        payload["judge_correct"] = row.verdict.correct
+        payload["judge_citations_valid"] = row.verdict.citations_valid
+        payload["judge_reason"] = row.verdict.reason
+    return payload
+
+
+def _step_json(step: Step) -> dict:
+    return {
+        "name": step.name,
+        "arguments": {key: _jsonable(value) for key, value in step.arguments.items()},
+        "output": step.output[:400],
+        "children": [_step_json(child) for child in step.children],
+    }
+
+
+def _jsonable(value: object) -> object:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)

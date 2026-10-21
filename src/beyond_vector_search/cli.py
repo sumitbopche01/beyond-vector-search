@@ -102,6 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--hybrid", action="store_true", help="Give deep sub-agents semantic_search")
     evaluate.add_argument("--provider", choices=["anthropic", "openai"])
     evaluate.add_argument("--model")
+    evaluate.add_argument(
+        "--out",
+        type=Path,
+        help="Write the report here (Markdown) plus a .jsonl trace sidecar",
+    )
     evaluate.set_defaults(func=cmd_eval)
 
     return parser
@@ -215,10 +220,15 @@ def cmd_index(args: argparse.Namespace) -> int:
 
 def cmd_eval(args: argparse.Namespace) -> int:
     from beyond_vector_search.agent import ask
-    from beyond_vector_search.evaluate import evaluate, load_questions, render_report
+    from beyond_vector_search.evaluate import evaluate, load_questions, render_report, write_report
     from beyond_vector_search.rag import rag_answer
 
     settings = resolve_settings(args)
+    if not settings.docs_root.is_dir():
+        raise FileNotFoundError(
+            f"docs root does not exist: {settings.docs_root}. "
+            "Set DOCS_ROOT or pass --docs. The sample corpus is examples/corpus."
+        )
     questions = load_questions(args.questions)
     names = [part.strip() for part in args.systems.split(",") if part.strip()]
     systems = {}
@@ -252,8 +262,12 @@ def cmd_eval(args: argparse.Namespace) -> int:
         def judge(item, answer, bound=provider):
             return judge_answer(lambda system, user: bound.complete_text(system, user).text, item, answer)
 
-    rows = evaluate(questions, systems, judge=judge)
+    corpus = Corpus(settings.docs_root, max_output_chars=settings.max_output_chars)
+    rows = evaluate(questions, systems, judge=judge, corpus=corpus)
     print(render_report(rows))
+    if args.out:
+        written = write_report(args.out, rows, settings=settings)
+        print(f"\nWrote {written}, {written.with_suffix('.jsonl')}, and {written.with_suffix('.svg')}")
     return 0
 
 
