@@ -55,3 +55,32 @@ class Corpus:
 
     def is_text(self, path: Path) -> bool:
         return path.suffix.lower() in TEXT_EXTENSIONS
+
+
+def text_snapshot(root: Path) -> tuple[tuple[str, ...], float]:
+    """Relative text paths and the newest mtime. Dot folders are skipped.
+
+    Indexes use this pair so a deleted file is noticed even when the
+    remaining files were not edited.
+    """
+    if not root.is_dir():
+        return (), 0.0
+    files: list[str] = []
+    newest = 0.0
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in TEXT_EXTENSIONS:
+            continue
+        relative = path.relative_to(root)
+        if any(part.startswith(".") for part in relative.parts):
+            continue
+        files.append(str(relative))
+        newest = max(newest, path.stat().st_mtime)
+    return tuple(files), newest
+
+
+def atomic_write(path: Path, text: str) -> None:
+    """Write via a temp file so a crash does not leave a half-written index."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(text, encoding="utf-8")
+    temporary.replace(path)

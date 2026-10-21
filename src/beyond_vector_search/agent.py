@@ -116,7 +116,7 @@ def ask(
             "Set DOCS_ROOT or pass --docs. The sample corpus is examples/corpus."
         )
     corpus = Corpus(settings.docs_root, max_output_chars=settings.max_output_chars)
-    toolset = Toolset(corpus)
+    toolset = Toolset(corpus, tree_path=settings.tree_path)
     system = SEARCH_PROMPT
 
     if hybrid:
@@ -124,10 +124,11 @@ def ask(
         toolset.extras.append(semantic_search_tool(settings))
 
     if deep:
+        from beyond_vector_search.prompts import ORCHESTRATOR_PROMPT
         from beyond_vector_search.subagent import attach_deep_search
         attach_deep_search(toolset, settings, hybrid=hybrid)
-        toolset.only = {"list_files", "deep_search"}
-        system = _orchestrator_prompt()
+        toolset.only = {"list_files", "corpus_tree", "deep_search"}
+        system = ORCHESTRATOR_PROMPT
 
     active = provider if provider is not None else _make(settings)
     return run_loop(
@@ -144,11 +145,6 @@ def ask(
 def _make(settings: Settings) -> Provider:
     from beyond_vector_search.providers import make_provider
     return make_provider(settings)
-
-
-def _orchestrator_prompt() -> str:
-    from beyond_vector_search.prompts import ORCHESTRATOR_PROMPT
-    return ORCHESTRATOR_PROMPT
 
 
 def _add_usage(result: Result, turn: ModelTurn) -> None:

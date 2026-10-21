@@ -1,6 +1,6 @@
-"""tools.py — the four search tools and their JSON schemas.
+"""tools.py — the search tools and their JSON schemas.
 
-list_files, grep, read_file, and outline are deliberately boring.
+list_files, grep, read_file, outline, and corpus_tree are deliberately boring.
 The model decides which one to call. Outputs stay small so a long
 session does not fill the context with noise.
 """
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from beyond_vector_search.sandbox import TEXT_EXTENSIONS, Corpus
-from beyond_vector_search.tree import render_outline
+from beyond_vector_search.tree import load_corpus_tree, render_outline
 
 ParamFn = Callable[..., str]
 
@@ -71,8 +71,9 @@ class Tool:
 class Toolset:
     """Tools bound to one corpus. Extra tools (semantic search, deep_search) register later."""
 
-    def __init__(self, corpus: Corpus):
+    def __init__(self, corpus: Corpus, tree_path: Path | None = None):
         self.corpus = corpus
+        self.tree_path = tree_path
         self.extras: list[Tool] = []
         self.only: set[str] | None = None
         self._special: dict[str, Callable[..., tuple[str, list]]] = {}
@@ -121,6 +122,14 @@ class Toolset:
                 "a table of contents to navigate long documents.",
                 [Param("path", "string", "Markdown file relative to the docs root", required=True)],
                 self.outline,
+            ),
+            Tool(
+                "corpus_tree",
+                "Heading tree for the corpus: each file, its headings, and their line ranges. "
+                "Use this first to see where a long document set is organised. "
+                "The tree is saved on disk and reused until a file changes.",
+                [Param("path", "string", "Folder or file relative to the docs root. Default '.'")],
+                self.corpus_tree,
             ),
             *self.extras,
         ]
@@ -260,6 +269,15 @@ class Toolset:
         body = "\n".join(f"{i}\t{lines[i - 1]}" for i in range(start, end + 1))
         header = f"{self.corpus.relative(target)} - lines {start}-{end} of {len(lines)}"
         return self.corpus.truncate(f"{header}\n{body}")
+
+    def corpus_tree(self, path: str = ".") -> str:
+        try:
+            rendered = load_corpus_tree(self.corpus, self.tree_path, path)
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            return f"ERROR {type(exc).__name__}: {exc}"
+        if not rendered:
+            return "No headings found - use list_files and grep."
+        return self.corpus.truncate(rendered)
 
     def outline(self, path: str) -> str:
         target = self.corpus.safe_path(path)

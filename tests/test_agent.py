@@ -156,7 +156,7 @@ def test_ask_selects_orchestrator_tools_without_calling_a_model(tmp_path: Path) 
     ask("hello", verbose=False, settings=settings, provider=provider, deep=True)
     assert provider.seen is not None
     names = provider.seen[1]
-    assert names == ["list_files", "deep_search"]
+    assert names == ["list_files", "corpus_tree", "deep_search"]
     assert "delegating search" in provider.seen[2]
 
     hybrid = Scripted([ModelTurn("done", [])])

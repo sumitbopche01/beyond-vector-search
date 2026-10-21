@@ -20,7 +20,10 @@ def attach_deep_search(toolset: Toolset, settings: Settings, hybrid: bool = Fals
         from beyond_vector_search.providers import make_provider
 
         child_settings = settings.for_search_agent()
-        child = Toolset(Corpus(child_settings.docs_root, child_settings.max_output_chars))
+        child = Toolset(
+            Corpus(child_settings.docs_root, child_settings.max_output_chars),
+            tree_path=child_settings.tree_path,
+        )
         if hybrid:
             from beyond_vector_search.rag import semantic_search_tool
             child.extras.append(semantic_search_tool(child_settings))

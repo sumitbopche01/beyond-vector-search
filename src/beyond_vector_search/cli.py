@@ -66,7 +66,8 @@ def build_parser() -> argparse.ArgumentParser:
     outline.set_defaults(func=cmd_outline)
 
     tree = sub.add_parser("tree", parents=[common], help="Heading tree, optionally summarized")
-    tree.add_argument("path")
+    tree.add_argument("path", nargs="?", help="One file. Omit with --all for the whole corpus")
+    tree.add_argument("--all", action="store_true", help="Heading tree for every file, saved under .bvs/")
     tree.add_argument("--summarize", action="store_true", help="One LLM pass that summarizes each heading")
     tree.add_argument("--write", type=Path, help="Also write the tree to this file")
     tree.add_argument("--provider", choices=["anthropic", "openai"])
@@ -146,9 +147,21 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 
 def cmd_tree(args: argparse.Namespace) -> int:
-    from beyond_vector_search.tree import apply_summaries, build_tree, render_nodes
+    from beyond_vector_search.tree import apply_summaries, build_tree, load_corpus_tree, render_nodes
 
     corpus = _corpus(args)
+    if args.all:
+        if args.summarize:
+            raise ValueError("--summarize applies to one file; pass a path and omit --all")
+        settings = resolve_settings(args)
+        text = load_corpus_tree(corpus, settings.tree_path, ".") or "No headings found - use grep or read_file."
+        print(text)
+        if args.write:
+            args.write.parent.mkdir(parents=True, exist_ok=True)
+            args.write.write_text(text + "\n", encoding="utf-8")
+        return 0
+    if not args.path:
+        raise ValueError("pass a file, or --all for the whole corpus")
     target = corpus.safe_path(args.path)
     if target.is_dir():
         raise ValueError(f"{args.path} is a folder; pass a file")

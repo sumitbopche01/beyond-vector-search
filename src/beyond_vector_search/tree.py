@@ -3,14 +3,20 @@
 This is the structural half of tree navigation: sections, nested headings,
 and the line range of each one. Summaries are an optional LLM pass on top,
 run once per document, not on every query.
+
+corpus_tree is that map for the whole folder, saved next to the lexical
+index so a later question can open it before grepping.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from beyond_vector_search.parsing import parse_json
+from beyond_vector_search.sandbox import Corpus, atomic_write, text_snapshot
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 
@@ -100,6 +106,65 @@ def summary_request(nodes: list[Node]) -> str:
     for node in flatten(nodes):
         lines.append(f"{node.start_line}\t{'#' * node.level} {node.title}")
     return "\n".join(lines)
+
+
+def render_corpus(corpus: Corpus, path: str = ".") -> str:
+    """Heading tree for every text file under path, grouped by file."""
+    base = corpus.safe_path(path)
+    if base.is_file():
+        files = [base] if corpus.is_text(base) else []
+    else:
+        files = [
+            item for item in sorted(base.rglob("*"))
+            if item.is_file() and corpus.is_text(item)
+            and not any(part.startswith(".") for part in item.relative_to(corpus.root).parts)
+        ]
+    blocks: list[str] = []
+    for item in files:
+        rendered = render_outline(corpus.read_lines(item))
+        if not rendered:
+            continue
+        blocks.append(f"{corpus.relative(item)}\n{rendered}")
+    return "\n\n".join(blocks)
+
+
+def load_corpus_tree(corpus: Corpus, cache: Path | None = None, path: str = ".") -> str:
+    """Return the corpus heading tree, reusing the saved file when it is still fresh."""
+    use_cache = cache is not None and path.strip() in {"", "."}
+    sources, newest = text_snapshot(corpus.root)
+    if use_cache and cache is not None and _tree_is_fresh(cache, sources, newest):
+        cached = cache.read_text(encoding="utf-8").strip()
+        if cached:
+            return cached
+    text = render_corpus(corpus, path)
+    if use_cache and cache is not None:
+        atomic_write(cache, (text + "\n") if text else "")
+        atomic_write(
+            _stamp_path(cache),
+            json.dumps({"sources": list(sources), "newest": newest}),
+        )
+    return text
+
+
+def _stamp_path(cache: Path) -> Path:
+    return cache.with_suffix(".stamp.json")
+
+
+def _tree_is_fresh(cache: Path, sources: tuple[str, ...], newest: float) -> bool:
+    stamp = _stamp_path(cache)
+    if not cache.is_file() or not stamp.is_file():
+        return False
+    try:
+        data = json.loads(stamp.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(data, dict) or data.get("sources") != list(sources):
+        return False
+    try:
+        saved_newest = float(data.get("newest") or 0)
+    except (TypeError, ValueError):
+        return False
+    return saved_newest >= newest
 
 
 def apply_summaries(nodes: list[Node], payload: str) -> None:

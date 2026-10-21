@@ -48,11 +48,13 @@ class Settings:
     max_output_chars: int = 12_000
     max_input_tokens: int | None = None
     chroma_path: Path = Path(".chroma")
+    lexical_path: Path = Path(".bvs/lexical.json")
     max_tokens: int = 4096
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "docs_root", Path(self.docs_root).expanduser().resolve())
         object.__setattr__(self, "chroma_path", Path(self.chroma_path).expanduser().resolve())
+        object.__setattr__(self, "lexical_path", Path(self.lexical_path).expanduser().resolve())
         object.__setattr__(self, "provider", _normalize_provider(self.provider))
         if self.max_turns < 1:
             raise ValueError("max_turns must be at least 1")
@@ -69,7 +71,13 @@ class Settings:
             max_output_chars=int(os.environ.get("BVS_MAX_OUTPUT_CHARS", "12000")),
             max_input_tokens=_optional_int(os.environ.get("BVS_MAX_INPUT_TOKENS")),
             chroma_path=Path(os.environ.get("BVS_CHROMA_PATH", ".chroma")),
+            lexical_path=Path(os.environ.get("BVS_LEXICAL_PATH", ".bvs/lexical.json")),
         )
+
+    @property
+    def tree_path(self) -> Path:
+        """Saved heading tree, next to the lexical index."""
+        return self.lexical_path.with_name("tree.md")
 
     def using(self, **changes: object) -> Settings:
         return replace(self, **changes)
