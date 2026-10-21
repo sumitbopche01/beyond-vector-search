@@ -263,7 +263,14 @@ def cmd_eval(args: argparse.Namespace) -> int:
             return judge_answer(lambda system, user: bound.complete_text(system, user).text, item, answer)
 
     corpus = Corpus(settings.docs_root, max_output_chars=settings.max_output_chars)
-    rows = evaluate(questions, systems, judge=judge, corpus=corpus)
+    from beyond_vector_search.progress import reporting
+
+    def _say(message: str) -> None:
+        print(message, file=sys.stderr, flush=True)
+
+    with reporting(_say):
+        _say(f"{len(questions)} questions × {', '.join(names)}")
+        rows = evaluate(questions, systems, judge=judge, corpus=corpus)
     print(render_report(rows))
     if args.out:
         written = write_report(args.out, rows, settings=settings)

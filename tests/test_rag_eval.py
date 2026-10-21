@@ -119,6 +119,22 @@ def test_evaluate_uses_the_supplied_systems() -> None:
     assert [row.keyword_ok for row in rows] == [True, False]
 
 
+def test_evaluate_prints_each_question_while_it_runs() -> None:
+    from beyond_vector_search.progress import reporting
+
+    lines: list[str] = []
+    item = Question("What is the cap?", ["2x"], "lookup")
+    with reporting(lines.append):
+        evaluate([item], {"agentic": lambda _question: Result("2x", seconds=1.2, turns=3, tool_calls=2)})
+    text = "\n".join(lines)
+    assert "1/1" in text
+    assert "agentic" in text
+    assert "What is the cap?" in text
+    assert "pass" in text
+    assert "1.2s" in text
+    assert "2 searches" in text
+
+
 def test_report_adds_a_citation_column_and_a_sidecar(tmp_path: Path) -> None:
     item = Question("cap?", ["2x"], "lookup")
     corpus = Corpus(ROOT / "examples" / "corpus")
@@ -180,3 +196,7 @@ def test_eval_command_writes_the_report(tmp_path: Path, monkeypatch, capsys) -> 
     assert out.is_file()
     assert out.with_suffix(".jsonl").is_file()
     assert "cited" in captured.out
+    assert "6 questions" in captured.err
+    assert "1/12" in captured.err
+    assert "agentic" in captured.err
+    assert "pass" in captured.err

@@ -7,12 +7,14 @@ Providers differ. This loop does not.
 
 from __future__ import annotations
 
+import contextvars
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 from beyond_vector_search.config import Settings
 from beyond_vector_search.display import colors_enabled, format_call, paint
+from beyond_vector_search.progress import note
 from beyond_vector_search.prompts import SEARCH_PROMPT
 from beyond_vector_search.providers.base import ModelTurn, Provider, ToolCall, ToolOutput
 from beyond_vector_search.result import Result, Step
@@ -24,10 +26,17 @@ def execute_calls(calls: list[ToolCall], toolset: Toolset) -> list[ToolOutput]:
     """Run every tool call in this turn. Order matches the model's request order."""
     if len(calls) <= 1:
         return [_run_one(call, toolset) for call in calls]
+    parent = contextvars.copy_context()
     workers = min(8, len(calls))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [
-            pool.submit(toolset.call, call.name, call.arguments, call.id)
+            pool.submit(
+                parent.copy().run,
+                toolset.call,
+                call.name,
+                call.arguments,
+                call.id,
+            )
             for call in calls
         ]
         return [
@@ -59,6 +68,7 @@ def run_loop(
     announced = False
 
     for _ in range(max_turns):
+        note("        model")
         turn = provider.complete()
         _add_usage(result, turn)
         if not turn.tool_calls:
@@ -70,6 +80,9 @@ def run_loop(
             result.answer = "Stopped: hit the per-query token budget before a final answer."
             result.stop = "token_budget"
             break
+
+        for call in turn.tool_calls:
+            note(f"        {format_call(call.name, call.arguments)}")
 
         if verbose and turn.tool_calls and not announced:
             print(paint("Search", "2", enabled=use_color))

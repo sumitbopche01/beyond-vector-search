@@ -60,6 +60,23 @@ def test_loop_greps_then_answers(tmp_path: Path, capsys) -> None:
     assert "addendum.md" in provider.results[0][0].output
 
 
+def test_a_listening_eval_sees_the_model_call_and_the_search(tmp_path: Path) -> None:
+    from beyond_vector_search.progress import reporting
+
+    root = tmp_path / "docs"
+    root.mkdir()
+    (root / "addendum.md").write_text("The cap is 2x annual fees.\n", encoding="utf-8")
+    provider = Scripted([
+        ModelTurn(text="", tool_calls=[ToolCall("c1", "grep", {"pattern": "2x"})]),
+        ModelTurn(text="The cap is 2x.", tool_calls=[]),
+    ])
+    lines: list[str] = []
+    with reporting(lines.append):
+        run_loop("What is the cap?", provider, Toolset(Corpus(root)), verbose=False, max_turns=4)
+    assert "model" in lines[0]
+    assert any("grep" in line and "pattern=2x" in line for line in lines)
+
+
 def test_verbose_trace_is_a_numbered_search_list(tmp_path: Path, capsys) -> None:
     root = tmp_path / "docs"
     root.mkdir()

@@ -201,6 +201,9 @@ def rag_answer(question: str, settings: Settings | None = None, k: int = 5) -> R
     """One retrieval, then one generation. No loop and no second search."""
     settings = settings or Settings.from_env()
     started = time.time()
+    from beyond_vector_search.progress import note
+
+    note("        retrieving")
     documents, metadatas = _query(settings, question, max(1, k))
     if not documents:
         return Result(
@@ -214,6 +217,7 @@ def rag_answer(question: str, settings: Settings | None = None, k: int = 5) -> R
         f"lines {(meta or {}).get('start_line')}-{(meta or {}).get('end_line')}]\n{doc}"
         for doc, meta in zip(documents, metadatas)
     )
+    note("        model")
     from beyond_vector_search.providers import make_provider
     reply = make_provider(settings).complete_text(
         RAG_PROMPT,

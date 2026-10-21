@@ -18,6 +18,7 @@ from pathlib import Path
 
 from beyond_vector_search.citations import CitationScore, score_citations
 from beyond_vector_search.parsing import parse_json
+from beyond_vector_search.progress import note
 from beyond_vector_search.prompts import JUDGE_PROMPT
 from beyond_vector_search.result import Result, Step
 from beyond_vector_search.sandbox import Corpus
@@ -140,11 +141,19 @@ def evaluate(
     corpus: Corpus | None = None,
 ) -> list[Row]:
     rows: list[Row] = []
+    total = len(questions) * len(systems)
+    done = 0
     for item in questions:
+        preview = " ".join(item.q.split())
+        if len(preview) > 72:
+            preview = preview[:69] + "..."
         for name, answer_fn in systems.items():
+            done += 1
+            note(f"{done:>2}/{total:<2}  {name:<8} {item.type:<13} {preview}")
             result = answer_fn(item.q)
             verdict = None
             if judge:
+                note("        judging")
                 verdict = judge(item, result.answer)
             citation = score_citations(result.answer, item, corpus) if corpus is not None else None
             keyword_ok = score_keywords(result.answer, item)
@@ -156,7 +165,25 @@ def evaluate(
                 verdict=verdict,
                 citation=citation,
             ))
+            note("        " + _outcome(keyword_ok, citation, verdict, result))
     return rows
+
+
+def _outcome(
+    keyword_ok: bool,
+    citation: CitationScore | None,
+    verdict: JudgeVerdict | None,
+    result: Result,
+) -> str:
+    parts = ["pass" if keyword_ok else "fail"]
+    if citation is not None:
+        parts.append("cited" if citation.grounded else "uncited")
+    if verdict is not None:
+        parts.append("judge=pass" if verdict.correct else "judge=fail")
+    parts.append(f"{result.seconds}s")
+    parts.append(f"{result.turns} turns")
+    parts.append(f"{result.tool_calls} searches")
+    return "  ".join(parts)
 
 
 def render_report(rows: list[Row]) -> str:
