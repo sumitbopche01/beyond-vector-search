@@ -3,6 +3,10 @@
 This is the only ingestion step agentic search needs: keep headings, keep
 page numbers, and mirror the source folders. No chunking and no embeddings.
 Re-running skips files whose output is already newer than the source.
+
+PDF pages are read in layout mode so a table that was aligned in columns
+survives as a Markdown table. This is not a full parser: wrapped cells and
+scanned pages still need a person.
 """
 
 from __future__ import annotations
@@ -56,11 +60,83 @@ def pdf_to_markdown(pdf: Path) -> str:
     reader = PdfReader(pdf)
     parts = [f"# {pdf.stem}\n"]
     for number, page in enumerate(reader.pages, 1):
-        text = page.extract_text() or ""
-        text = re.sub(r"[ \t]+\n", "\n", text).strip()
-        body = text or "[no text layer - scanned page, needs OCR]"
-        parts.append(f"## Page {number}\n\n{body}\n")
+        parts.append(f"## Page {number}\n\n{_page_body(page)}\n")
     return "\n".join(parts)
+
+
+def layout_to_markdown(text: str) -> str:
+    """Turn layout-extracted text into paragraphs and Markdown tables.
+
+    A table is two or more consecutive lines that split into the same number
+    of columns on a run of three or more spaces. A double space in prose
+    stays prose.
+    """
+    lines = text.splitlines()
+    blocks: list[str] = []
+    index = 0
+    while index < len(lines):
+        if not lines[index].strip():
+            index += 1
+            continue
+        columns = _split_columns(lines[index])
+        if columns is not None:
+            run = [columns]
+            nxt = index + 1
+            while nxt < len(lines) and lines[nxt].strip():
+                split = _split_columns(lines[nxt])
+                if split is None or len(split) != len(columns):
+                    break
+                run.append(split)
+                nxt += 1
+            if len(run) >= 2:
+                blocks.append(_markdown_table(run))
+                index = nxt
+                continue
+        blocks.append(lines[index].strip())
+        index += 1
+    return "\n\n".join(blocks)
+
+
+def _page_body(page) -> str:
+    laid = _extract_page(page, "layout")
+    plain = _extract_page(page, "plain")
+    if laid.strip():
+        rendered = layout_to_markdown(laid).strip()
+        if rendered:
+            return rendered
+    text = re.sub(r"[ \t]+\n", "\n", plain).strip()
+    return text or "[no text layer - scanned page, needs OCR]"
+
+
+def _extract_page(page, mode: str) -> str:
+    try:
+        return page.extract_text(extraction_mode=mode) or ""
+    except TypeError:
+        if mode != "plain":
+            return ""
+        return page.extract_text() or ""
+
+
+def _split_columns(line: str) -> list[str] | None:
+    parts = [part.strip() for part in re.split(r" {3,}", line.strip()) if part.strip()]
+    if len(parts) >= 2:
+        return parts
+    return None
+
+
+def _markdown_table(rows: list[list[str]]) -> str:
+    width = max(len(row) for row in rows)
+
+    def cell(row: list[str], column: int) -> str:
+        value = row[column] if column < len(row) else ""
+        return value.replace("|", "\\|")
+
+    body = [
+        "| " + " | ".join(cell(row, column) for column in range(width)) + " |"
+        for row in rows
+    ]
+    rule = "| " + " | ".join("---" for _ in range(width)) + " |"
+    return "\n".join([body[0], rule, *body[1:]])
 
 
 def docx_to_markdown(path: Path) -> str:
@@ -84,10 +160,14 @@ def docx_to_markdown(path: Path) -> str:
             else:
                 parts.append(text + "\n")
         else:
-            for row in block.rows:
-                cells = [" ".join(cell.text.split()) for cell in row.cells]
-                parts.append("| " + " | ".join(cells) + " |")
-            parts.append("")
+            rows = [
+                [" ".join(cell.text.split()) for cell in row.cells]
+                for row in block.rows
+            ]
+            rows = [row for row in rows if any(cell.strip() for cell in row)]
+            if rows:
+                parts.append(_markdown_table(rows))
+                parts.append("")
     return "\n".join(parts).rstrip() + "\n"
 
 
