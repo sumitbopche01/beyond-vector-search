@@ -1,0 +1,4 @@
+{"q": "What is the binding enterprise liability cap on the 2026 order?", "type": "cross_ref", "must_include": ["3x annual fees", "CAP-441"]}
+{"q": "What is the current notice period after Amendment 3?", "type": "contradiction", "must_include": ["10 business days", "withdrawn"]}
+{"q": "What is the issued storage quota code?", "type": "decoy", "must_include": ["QT-77"]}
+{"q": "What is the monthly rent for the Tokyo office?", "type": "unanswerable", "must_include": []}

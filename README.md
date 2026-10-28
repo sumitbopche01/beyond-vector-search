@@ -77,6 +77,8 @@ bvs eval examples/questions.jsonl --docs examples/corpus --systems agentic,rag,h
 
 The sample set is small on purpose. It is there to show the loop, including a synonym question (`churn` vs `customer attrition`) and a question whose answer is not in the documents. It is not a leaderboard.
 
+`examples/fixtures/` is a second corpus, for failures the sample set cannot show. Its `corpus/` folder is the search oracle (a cross-reference, a later amendment, a decoy code, and a missing fact). Its `ingest/` folder is the PDF oracle (two columns, a wrapped table cell, a scanned page) and is graded by diffing extractor output against a golden Markdown file, not by `bvs eval`.
+
 ## MCP
 
 The same read-only tools are available over stdio, so Claude Desktop or Cursor can call them.
